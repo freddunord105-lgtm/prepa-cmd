@@ -73,68 +73,63 @@ button{
   cursor:pointer;
 }
 .fake-scan{background:#e5e7eb;font-size:13px}
-
-/* BAC */
-#bin-section{
-  margin-top:16px;
-  padding-top:12px;
-  border-top:1px dashed var(--border);
-}
-#binCode{
-  width:100%;
-  padding:10px;
-  border-radius:8px;
-  border:1px solid var(--border);
-  font-weight:700;
-  margin-top:6px;
-}
 </style>
 </head>
 
 <body>
 <div class="app">
 
+<!-- HEADER -->
 <div class="header">
   <div class="logo">SAMEMO</div>
   <div class="subtitle">Préparation de commandes</div>
 </div>
 
+<!-- FIN -->
 <div id="screen-end" class="card hidden">
   <h2>🎉 Toutes les commandes ont été traitées</h2>
   <button class="success" onclick="location.reload()">🔁 Nouvelle session</button>
 </div>
 
+<!-- LISTE COMMANDES -->
 <div id="screen-list" class="card">
   <h2>📋 Commandes</h2>
   <div id="orders"></div>
 </div>
 
+<!-- PREPA -->
 <div id="screen-prep" class="card hidden">
-
   <div class="prep-header">
     <div class="back" onclick="goBack()">⬅</div>
     <h2 id="cmdTitle"></h2>
   </div>
-
   <div id="progress" class="progress"></div>
   <div id="lines"></div>
-
-  <!-- BAC -->
-  <div id="bin-section" class="hidden">
-    <strong>🧺 Bac de la commande</strong>
-    <input id="binCode" readonly placeholder="Scanner le bac">
-    <button class="fake-scan" onclick="fakeScanBin()">Simuler scan BAC-001</button>
-  </div>
-
-  <button id="finishBtn" class="disabled" disabled>
-    ✅ Commande traitée
+  <button id="finishPrepBtn" class="disabled" disabled>
+    Continuer
   </button>
-
 </div>
+
+<!-- CHOIX BAC -->
+<div id="screen-bin" class="card hidden">
+  <h2>🧺 Choisir un bac</h2>
+  <div id="bins"></div>
+  <button id="confirmBinBtn" class="disabled" disabled>
+    Valider le bac
+  </button>
+</div>
+
+<!-- SCAN BAC -->
+<div id="screen-scan" class="card hidden">
+  <h2>📦 Scanner le bac</h2>
+  <p id="scanMsg">Scanne le QR du bac sélectionné</p>
+  <button class="fake-scan" onclick="fakeScanBin()">Simuler scan</button>
+</div>
+
 </div>
 
 <script>
-/* ===== DATA ===== */
+/* ===== DATA TEST ===== */
 
 const ORDERS = [
   { id:"CMD-001", client:"Client Alpha", status:"TODO", bin:null },
@@ -151,25 +146,35 @@ const LINES = {
   ]
 };
 
+const BINS = [
+  { id:"BAC-001", status:"LIBRE" },
+  { id:"BAC-002", status:"OCCUPE" },
+  { id:"BAC-003", status:"LIBRE" }
+];
+
 /* ===== DOM ===== */
 
-const ordersDiv   = document.getElementById("orders");
-const screenList  = document.getElementById("screen-list");
-const screenPrep  = document.getElementById("screen-prep");
-const screenEnd   = document.getElementById("screen-end");
-const cmdTitle    = document.getElementById("cmdTitle");
-const progressDiv = document.getElementById("progress");
-const linesDiv    = document.getElementById("lines");
-const finishBtn   = document.getElementById("finishBtn");
-const binSection  = document.getElementById("bin-section");
-const binCode     = document.getElementById("binCode");
+const screenList = document.getElementById("screen-list");
+const screenPrep = document.getElementById("screen-prep");
+const screenBin  = document.getElementById("screen-bin");
+const screenScan = document.getElementById("screen-scan");
+const screenEnd  = document.getElementById("screen-end");
+
+const ordersDiv  = document.getElementById("orders");
+const linesDiv   = document.getElementById("lines");
+const progress   = document.getElementById("progress");
+const cmdTitle   = document.getElementById("cmdTitle");
+const binsDiv    = document.getElementById("bins");
+const scanMsg    = document.getElementById("scanMsg");
+
+const finishPrepBtn = document.getElementById("finishPrepBtn");
+const confirmBinBtn = document.getElementById("confirmBinBtn");
 
 /* ===== STATE ===== */
 
-let currentCmd = null;
-let lines = {};
-let done  = {};
-let scannedBin = null;
+let currentCmd=null;
+let lines={}, done={};
+let selectedBin=null;
 
 /* ===== LOGIC ===== */
 
@@ -185,9 +190,9 @@ function loadOrders(){
         ${o.status==='DONE'?'Traitée':'À préparer'}
       </span><br>
       ${
-        o.status==='TODO'
+        o.status==="TODO"
         ? `<button class="primary" onclick="startPrep('${o.id}')">Préparer</button>`
-        : `<span class="doneMark">✔ Bac ${o.bin}</span>`
+        : `<span class="doneMark">✔ ${o.bin}</span>`
       }
     `;
     ordersDiv.appendChild(d);
@@ -201,89 +206,118 @@ function loadOrders(){
 
 function startPrep(id){
   currentCmd=id;
-  scannedBin=null;
-  binCode.value="";
-  binSection.classList.add("hidden");
-
-  screenList.classList.add("hidden");
-  screenPrep.classList.remove("hidden");
-
-  cmdTitle.textContent=`Commande ${id}`;
-
   lines={}; done={};
+
   LINES[id].forEach(l=>{
     lines[l.code]={name:l.name,qty:l.qty};
     done[l.code]=0;
   });
 
-  render();
+  cmdTitle.textContent=`Commande ${id}`;
+  finishPrepBtn.disabled=true;
+  finishPrepBtn.className="disabled";
+
+  screenList.classList.add("hidden");
+  screenPrep.classList.remove("hidden");
+  renderLines();
 }
 
-function render(){
+function renderLines(){
   linesDiv.innerHTML="";
-  let total=0, doneTotal=0;
+  let total=0, ok=0;
 
   for(const c in lines){
     total+=lines[c].qty;
-    doneTotal+=done[c];
-
+    ok+=done[c];
     const d=document.createElement("div");
     d.className="list-item";
     d.innerHTML=`
       <strong>${lines[c].name}</strong><br>
       ${done[c]} / ${lines[c].qty}
-      ${done[c]===lines[c].qty?" <span class='doneMark'>✔</span>":""}
-      <br>
+      ${done[c]===lines[c].qty?" ✔":""}<br>
       <button class="fake-scan" onclick="fakeScan('${c}')">
-        Simuler scan ${c}
+        Simuler scan
       </button>
     `;
     linesDiv.appendChild(d);
   }
 
-  progressDiv.textContent=`Avancement : ${doneTotal} / ${total}`;
+  progress.textContent=`Avancement : ${ok} / ${total}`;
 
-  if(doneTotal===total){
-    binSection.classList.remove("hidden");
+  if(ok===total){
+    finishPrepBtn.disabled=false;
+    finishPrepBtn.className="success";
   }
-
-  checkReady(doneTotal===total);
 }
 
 function fakeScan(code){
   if(done[code] < lines[code].qty){
     done[code]++;
-    render();
+    renderLines();
   }
 }
 
-function fakeScanBin(){
-  scannedBin="BAC-001";
-  binCode.value=scannedBin;
-  checkReady(true);
-}
-
-function checkReady(productsOk){
-  const ready = productsOk && scannedBin;
-  finishBtn.disabled=!ready;
-  finishBtn.className=ready?"success":"disabled";
-}
-
-finishBtn.onclick=()=>{
-  const o=ORDERS.find(o=>o.id===currentCmd);
-  o.status="DONE";
-  o.bin=scannedBin;
-  goBack();
+finishPrepBtn.onclick=()=>{
+  screenPrep.classList.add("hidden");
+  screenBin.classList.remove("hidden");
+  loadBins();
 };
 
+function loadBins(){
+  binsDiv.innerHTML="";
+  selectedBin=null;
+  confirmBinBtn.disabled=true;
+  confirmBinBtn.className="disabled";
+
+  BINS.filter(b=>b.status==="LIBRE").forEach(b=>{
+    const d=document.createElement("div");
+    d.className="list-item";
+    d.innerHTML=`
+      <strong>${b.id}</strong><br>
+      <button class="primary" onclick="selectBin('${b.id}')">
+        Choisir
+      </button>
+    `;
+    binsDiv.appendChild(d);
+  });
+}
+
+function selectBin(id){
+  selectedBin=id;
+  confirmBinBtn.disabled=false;
+  confirmBinBtn.className="success";
+}
+
+confirmBinBtn.onclick=()=>{
+  screenBin.classList.add("hidden");
+  screenScan.classList.remove("hidden");
+  scanMsg.textContent="Scanne le QR du bac sélectionné";
+};
+
+function fakeScanBin(){
+  if(!selectedBin) return;
+
+  scanMsg.textContent=`✅ Bac ${selectedBin} validé`;
+  scanMsg.style.color="green";
+
+  setTimeout(()=>{
+    const o=ORDERS.find(o=>o.id===currentCmd);
+    o.status="DONE";
+    o.bin=selectedBin;
+    BINS.find(b=>b.id===selectedBin).status="OCCUPE";
+    goBack();
+  },800);
+}
+
 function goBack(){
-  currentCmd=null;
   screenPrep.classList.add("hidden");
+  screenBin.classList.add("hidden");
+  screenScan.classList.add("hidden");
   screenList.classList.remove("hidden");
   loadOrders();
 }
 
-/* ===== INIT ===== */
+/* INIT */
 loadOrders();
 </script>
 
