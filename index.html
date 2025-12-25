@@ -12,6 +12,7 @@
   --bg:#f8fafc;
   --card:#ffffff;
   --border:#e5e7eb;
+  --disabled:#94a3b8;
 }
 *{box-sizing:border-box}
 body{
@@ -19,25 +20,10 @@ body{
   font-family:system-ui,sans-serif;
   background:var(--bg);
 }
-.app{
-  max-width:480px;
-  margin:auto;
-  padding:16px;
-}
-.header{
-  text-align:center;
-  margin-bottom:16px;
-}
-.logo{
-  font-size:28px;
-  font-weight:900;
-  color:var(--primary);
-  letter-spacing:1px;
-}
-.subtitle{
-  font-size:14px;
-  color:#475569;
-}
+.app{max-width:480px;margin:auto;padding:16px}
+.header{text-align:center;margin-bottom:16px}
+.logo{font-size:28px;font-weight:900;color:var(--primary)}
+.subtitle{font-size:14px;color:#475569}
 .card{
   background:var(--card);
   border-radius:16px;
@@ -57,6 +43,10 @@ button{
 }
 .primary{background:var(--primary);color:#fff}
 .success{background:var(--success);color:#fff}
+.disabled{
+  background:var(--disabled);
+  cursor:not-allowed;
+}
 .list-item{
   padding:12px;
   border-bottom:1px solid var(--border);
@@ -67,13 +57,15 @@ button{
   margin-bottom:12px;
   text-align:center;
 }
+.done{color:var(--success);font-weight:800}
+.top-actions{
+  display:flex;
+  gap:8px;
+  margin-bottom:12px;
+}
 .fake-scan{
   background:#e5e7eb;
   font-size:13px;
-}
-.done{
-  color:var(--success);
-  font-weight:800;
 }
 </style>
 </head>
@@ -84,29 +76,36 @@ button{
 <!-- HEADER -->
 <div class="header">
   <div class="logo">SAMEMO</div>
-  <div class="subtitle">Préparation de commandes — mode test</div>
+  <div class="subtitle">Préparation de commandes</div>
 </div>
 
-<!-- ÉCRAN LISTE -->
+<!-- LISTE COMMANDES -->
 <div id="screen-list" class="card">
-  <h2>📋 Commandes à préparer</h2>
+  <h2>📋 Commandes</h2>
   <div id="orders"></div>
 </div>
 
-<!-- ÉCRAN PRÉPA -->
+<!-- PRÉPA -->
 <div id="screen-prep" class="card hidden">
+
+  <div class="top-actions">
+    <button class="fake-scan" onclick="goBack()">⬅ Retour</button>
+  </div>
+
   <h2 id="cmdTitle"></h2>
   <div id="progress" class="progress"></div>
   <div id="lines"></div>
-  <button id="finishBtn" class="success" disabled>Commande traitée</button>
+
+  <button id="finishBtn" class="disabled" disabled>
+    ✅ Commande traitée
+  </button>
+
 </div>
 
 </div>
 
 <script>
-/* =========================
-   FAKE DATA
-========================= */
+/* ========= FAKE DATA ========= */
 
 const FAKE_ORDERS = [
   { id:"CMD-001", client:"Client Alpha" },
@@ -114,45 +113,39 @@ const FAKE_ORDERS = [
 ];
 
 const FAKE_LINES = {
-  "CMD-001": [
+  "CMD-001":[
     { code:"P001", name:"Produit A", qty:2 },
     { code:"P002", name:"Produit B", qty:1 }
   ],
-  "CMD-002": [
+  "CMD-002":[
     { code:"P003", name:"Produit C", qty:3 }
   ]
 };
 
-/* =========================
-   DOM REFERENCES
-========================= */
+/* ========= DOM ========= */
 
-const ordersDiv   = document.getElementById("orders");
-const screenList  = document.getElementById("screen-list");
-const screenPrep  = document.getElementById("screen-prep");
-const cmdTitle    = document.getElementById("cmdTitle");
-const progressDiv = document.getElementById("progress");
-const linesDiv    = document.getElementById("lines");
-const finishBtn   = document.getElementById("finishBtn");
+const ordersDiv  = document.getElementById("orders");
+const screenList = document.getElementById("screen-list");
+const screenPrep = document.getElementById("screen-prep");
+const cmdTitle   = document.getElementById("cmdTitle");
+const progressDiv= document.getElementById("progress");
+const linesDiv   = document.getElementById("lines");
+const finishBtn  = document.getElementById("finishBtn");
 
-/* =========================
-   STATE
-========================= */
+/* ========= STATE ========= */
 
 let currentCmd = null;
 let lines = {};
 let done  = {};
 
-/* =========================
-   FUNCTIONS
-========================= */
+/* ========= FUNCTIONS ========= */
 
 function loadOrders(){
-  ordersDiv.innerHTML = "";
+  ordersDiv.innerHTML="";
   FAKE_ORDERS.forEach(o=>{
-    const d = document.createElement("div");
-    d.className = "list-item";
-    d.innerHTML = `
+    const d=document.createElement("div");
+    d.className="list-item";
+    d.innerHTML=`
       <strong>${o.id}</strong><br>
       ${o.client}<br>
       <button class="primary" onclick="startPrep('${o.id}')">
@@ -164,36 +157,36 @@ function loadOrders(){
 }
 
 function startPrep(id){
-  currentCmd = id;
+  currentCmd=id;
   screenList.classList.add("hidden");
   screenPrep.classList.remove("hidden");
-  cmdTitle.textContent = `Commande ${id}`;
 
-  lines = {};
-  done  = {};
+  cmdTitle.textContent=`Commande ${id}`;
+
+  lines={}; done={};
 
   FAKE_LINES[id].forEach(l=>{
-    lines[l.code] = { name:l.name, qty:l.qty };
-    done[l.code]  = 0;
+    lines[l.code]={name:l.name,qty:l.qty};
+    done[l.code]=0;
   });
 
   render();
 }
 
 function render(){
-  linesDiv.innerHTML = "";
-  let total = 0, doneTotal = 0;
+  linesDiv.innerHTML="";
+  let total=0, doneTotal=0;
 
   for(const c in lines){
-    total += lines[c].qty;
-    doneTotal += done[c];
+    total+=lines[c].qty;
+    doneTotal+=done[c];
 
-    const d = document.createElement("div");
-    d.className = "list-item";
-    d.innerHTML = `
+    const d=document.createElement("div");
+    d.className="list-item";
+    d.innerHTML=`
       <strong>${lines[c].name}</strong><br>
       ${done[c]} / ${lines[c].qty}
-      ${done[c] === lines[c].qty ? " <span class='done'>✔</span>" : ""}
+      ${done[c]===lines[c].qty?" <span class='done'>✔</span>":""}
       <br>
       <button class="fake-scan" onclick="fakeScan('${c}')">
         Simuler scan ${c}
@@ -202,24 +195,32 @@ function render(){
     linesDiv.appendChild(d);
   }
 
-  progressDiv.textContent = `Avancement : ${doneTotal} / ${total}`;
-  finishBtn.disabled = doneTotal !== total;
+  progressDiv.textContent=`Avancement : ${doneTotal} / ${total}`;
+
+  const complete = doneTotal===total;
+  finishBtn.disabled = !complete;
+  finishBtn.className = complete ? "success" : "disabled";
 }
 
 function fakeScan(code){
-  if(done[code] >= lines[code].qty) return;
-  done[code]++;
-  render();
+  if(done[code] < lines[code].qty){
+    done[code]++;
+    render();
+  }
 }
 
-finishBtn.onclick = ()=>{
+finishBtn.onclick=()=>{
   alert(`Commande ${currentCmd} traitée ✅`);
-  location.reload();
+  goBack();
 };
 
-/* =========================
-   INIT
-========================= */
+function goBack(){
+  currentCmd=null;
+  screenPrep.classList.add("hidden");
+  screenList.classList.remove("hidden");
+}
+
+/* ========= INIT ========= */
 
 loadOrders();
 </script>
