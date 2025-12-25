@@ -32,7 +32,7 @@ body{
   margin-bottom:16px;
   box-shadow:0 10px 25px rgba(0,0,0,.06);
 }
-h2{text-align:center;margin:0 0 12px}
+h2{text-align:center;margin:0}
 button{
   width:100%;
   padding:14px;
@@ -44,7 +44,6 @@ button{
 }
 .primary{background:var(--primary);color:#fff}
 .success{background:var(--success);color:#fff}
-.warning{background:var(--warning);color:#fff}
 .disabled{background:var(--disabled);cursor:not-allowed}
 .list-item{
   padding:12px;
@@ -62,7 +61,21 @@ button{
 .hidden{display:none}
 .progress{text-align:center;font-weight:700;margin-bottom:12px}
 .doneMark{color:var(--success);font-weight:900}
-.top-actions{display:flex;gap:8px;margin-bottom:12px}
+
+/* HEADER PREPA */
+.prep-header{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:12px;
+}
+.back{
+  font-size:22px;
+  cursor:pointer;
+  user-select:none;
+}
+.back:hover{opacity:.6}
+
 .fake-scan{background:#e5e7eb;font-size:13px}
 </style>
 </head>
@@ -70,13 +83,13 @@ button{
 <body>
 <div class="app">
 
-<!-- HEADER -->
+<!-- HEADER GLOBAL -->
 <div class="header">
   <div class="logo">SAMEMO</div>
   <div class="subtitle">Préparation de commandes</div>
 </div>
 
-<!-- FIN GLOBALE -->
+<!-- FIN -->
 <div id="screen-end" class="card hidden">
   <h2>🎉 Toutes les commandes ont été traitées</h2>
   <button class="success" onclick="location.reload()">🔁 Nouvelle session</button>
@@ -88,25 +101,27 @@ button{
   <div id="orders"></div>
 </div>
 
-<!-- PRÉPA -->
+<!-- PREPA -->
 <div id="screen-prep" class="card hidden">
-  <div class="top-actions">
-    <button class="fake-scan" onclick="goBack()">⬅ Retour</button>
+
+  <div class="prep-header">
+    <div class="back" onclick="goBack()">⬅</div>
+    <h2 id="cmdTitle"></h2>
   </div>
 
-  <h2 id="cmdTitle"></h2>
   <div id="progress" class="progress"></div>
   <div id="lines"></div>
 
   <button id="finishBtn" class="disabled" disabled>
     ✅ Commande traitée
   </button>
+
 </div>
 
 </div>
 
 <script>
-/* ========= DATA ========= */
+/* ===== DATA ===== */
 
 const ORDERS = [
   { id:"CMD-001", client:"Client Alpha", status:"TODO" },
@@ -123,7 +138,7 @@ const LINES = {
   ]
 };
 
-/* ========= DOM ========= */
+/* ===== DOM ===== */
 
 const ordersDiv   = document.getElementById("orders");
 const screenList  = document.getElementById("screen-list");
@@ -134,13 +149,13 @@ const progressDiv = document.getElementById("progress");
 const linesDiv    = document.getElementById("lines");
 const finishBtn   = document.getElementById("finishBtn");
 
-/* ========= STATE ========= */
+/* ===== STATE ===== */
 
 let currentCmd = null;
 let lines = {};
 let done  = {};
 
-/* ========= FUNCTIONS ========= */
+/* ===== LOGIC ===== */
 
 function loadOrders(){
   ordersDiv.innerHTML="";
@@ -174,8 +189,8 @@ function startPrep(id){
   screenPrep.classList.remove("hidden");
 
   cmdTitle.textContent=`Commande ${id}`;
-  lines={}; done={};
 
+  lines={}; done={};
   LINES[id].forEach(l=>{
     lines[l.code]={name:l.name,qty:l.qty};
     done[l.code]=0;
@@ -219,8 +234,7 @@ function fakeScan(code){
 }
 
 finishBtn.onclick=()=>{
-  const o = ORDERS.find(o=>o.id===currentCmd);
-  o.status="DONE";
+  ORDERS.find(o=>o.id===currentCmd).status="DONE";
   goBack();
 };
 
@@ -231,8 +245,7 @@ function goBack(){
   loadOrders();
 }
 
-/* ========= INIT ========= */
-
+/* ===== INIT ===== */
 loadOrders();
 </script>
 
