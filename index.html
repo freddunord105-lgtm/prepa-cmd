@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prépa Commandes — TEST</title>
+
+<style>
+body{margin:0;font-family:system-ui;background:#f8fafc}
+.app{max-width:480px;margin:auto;padding:16px}
+.card{background:#fff;border-radius:14px;padding:16px;margin-bottom:16px;
+box-shadow:0 10px 25px rgba(0,0,0,.06)}
+h2{text-align:center;margin:0 0 12px}
+button{width:100%;padding:14px;border:none;border-radius:12px;
+font-weight:700;cursor:pointer;margin-top:8px}
+.primary{background:#0f766e;color:#fff}
+.success{background:#16a34a;color:#fff}
+.list-item{padding:12px;border-bottom:1px solid #e5e7eb}
+.hidden{display:none}
+.progress{font-weight:700;margin-bottom:12px;text-align:center}
+.fake-scan{background:#e5e7eb;font-size:13px}
+.done{color:#16a34a;font-weight:700}
+</style>
+</head>
+
+<body>
+<div class="app">
+
+<!-- LISTE COMMANDES -->
+<div id="screen-list" class="card">
+  <h2>📋 Commandes à préparer</h2>
+  <div id="orders"></div>
+</div>
+
+<!-- PREPA -->
+<div id="screen-prep" class="card hidden">
+  <h2 id="cmdTitle"></h2>
+  <div id="progress" class="progress"></div>
+
+  <div id="lines"></div>
+
+  <button id="finishBtn" class="success" disabled>Commande traitée</button>
+</div>
+
+</div>
+
+<script>
+/* ---------- FAKE DATA ---------- */
+
+const FAKE_ORDERS = [
+  { id:"CMD-001", client:"Client Alpha" },
+  { id:"CMD-002", client:"Client Beta" }
+];
+
+const FAKE_LINES = {
+  "CMD-001": [
+    { code:"P001", name:"Produit A", qty:2 },
+    { code:"P002", name:"Produit B", qty:1 }
+  ],
+  "CMD-002": [
+    { code:"P003", name:"Produit C", qty:3 }
+  ]
+};
+
+/* ---------- STATE ---------- */
+
+let currentCmd=null;
+let lines={}, done={};
+
+/* ---------- UI ---------- */
+
+function loadOrders(){
+  orders.innerHTML="";
+  FAKE_ORDERS.forEach(o=>{
+    const d=document.createElement("div");
+    d.className="list-item";
+    d.innerHTML=`
+      <strong>${o.id}</strong><br>
+      ${o.client}<br>
+      <button class="primary" onclick="startPrep('${o.id}')">Préparer</button>
+    `;
+    orders.appendChild(d);
+  });
+}
+
+function startPrep(id){
+  currentCmd=id;
+  screen-list.classList.add("hidden");
+  screen-prep.classList.remove("hidden");
+  cmdTitle.textContent=`Commande ${id}`;
+
+  lines={}; done={};
+  FAKE_LINES[id].forEach(l=>{
+    lines[l.code]={name:l.name,qty:l.qty};
+    done[l.code]=0;
+  });
+
+  render();
+}
+
+function render(){
+  linesDiv.innerHTML="";
+  let total=0, doneT=0;
+
+  for(const c in lines){
+    total+=lines[c].qty;
+    doneT+=done[c];
+
+    const d=document.createElement("div");
+    d.className="list-item";
+    d.innerHTML=`
+      <strong>${lines[c].name}</strong><br>
+      ${done[c]} / ${lines[c].qty}
+      ${done[c]===lines[c].qty ? " <span class='done'>✔</span>" : ""}
+      <br>
+      <button class="fake-scan" onclick="fakeScan('${c}')">
+        Simuler scan ${c}
+      </button>
+    `;
+    linesDiv.appendChild(d);
+  }
+
+  progress.textContent=`Avancement : ${doneT} / ${total}`;
+  finishBtn.disabled = doneT !== total;
+}
+
+function fakeScan(code){
+  if(done[code] >= lines[code].qty) return;
+  done[code]++;
+  render();
+}
+
+finishBtn.onclick=()=>{
+  alert(`Commande ${currentCmd} traitée ✅`);
+  location.reload();
+};
+
+/* ---------- INIT ---------- */
+
+loadOrders();
+</script>
+</body>
+</html>
