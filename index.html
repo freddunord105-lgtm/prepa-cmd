@@ -9,6 +9,7 @@
 :root{
   --primary:#0f766e;
   --success:#16a34a;
+  --warning:#f59e0b;
   --bg:#f8fafc;
   --card:#ffffff;
   --border:#e5e7eb;
@@ -43,30 +44,26 @@ button{
 }
 .primary{background:var(--primary);color:#fff}
 .success{background:var(--success);color:#fff}
-.disabled{
-  background:var(--disabled);
-  cursor:not-allowed;
-}
+.warning{background:var(--warning);color:#fff}
+.disabled{background:var(--disabled);cursor:not-allowed}
 .list-item{
   padding:12px;
   border-bottom:1px solid var(--border);
 }
-.hidden{display:none}
-.progress{
+.badge{
+  display:inline-block;
+  padding:4px 10px;
+  border-radius:999px;
+  font-size:12px;
   font-weight:700;
-  margin-bottom:12px;
-  text-align:center;
 }
-.done{color:var(--success);font-weight:800}
-.top-actions{
-  display:flex;
-  gap:8px;
-  margin-bottom:12px;
-}
-.fake-scan{
-  background:#e5e7eb;
-  font-size:13px;
-}
+.badge.todo{background:#fff7ed;color:#9a3412}
+.badge.done{background:#ecfdf5;color:#065f46}
+.hidden{display:none}
+.progress{text-align:center;font-weight:700;margin-bottom:12px}
+.doneMark{color:var(--success);font-weight:900}
+.top-actions{display:flex;gap:8px;margin-bottom:12px}
+.fake-scan{background:#e5e7eb;font-size:13px}
 </style>
 </head>
 
@@ -79,7 +76,13 @@ button{
   <div class="subtitle">Préparation de commandes</div>
 </div>
 
-<!-- LISTE COMMANDES -->
+<!-- FIN GLOBALE -->
+<div id="screen-end" class="card hidden">
+  <h2>🎉 Toutes les commandes ont été traitées</h2>
+  <button class="success" onclick="location.reload()">🔁 Nouvelle session</button>
+</div>
+
+<!-- LISTE -->
 <div id="screen-list" class="card">
   <h2>📋 Commandes</h2>
   <div id="orders"></div>
@@ -87,7 +90,6 @@ button{
 
 <!-- PRÉPA -->
 <div id="screen-prep" class="card hidden">
-
   <div class="top-actions">
     <button class="fake-scan" onclick="goBack()">⬅ Retour</button>
   </div>
@@ -99,20 +101,19 @@ button{
   <button id="finishBtn" class="disabled" disabled>
     ✅ Commande traitée
   </button>
-
 </div>
 
 </div>
 
 <script>
-/* ========= FAKE DATA ========= */
+/* ========= DATA ========= */
 
-const FAKE_ORDERS = [
-  { id:"CMD-001", client:"Client Alpha" },
-  { id:"CMD-002", client:"Client Beta" }
+const ORDERS = [
+  { id:"CMD-001", client:"Client Alpha", status:"TODO" },
+  { id:"CMD-002", client:"Client Beta", status:"TODO" }
 ];
 
-const FAKE_LINES = {
+const LINES = {
   "CMD-001":[
     { code:"P001", name:"Produit A", qty:2 },
     { code:"P002", name:"Produit B", qty:1 }
@@ -124,13 +125,14 @@ const FAKE_LINES = {
 
 /* ========= DOM ========= */
 
-const ordersDiv  = document.getElementById("orders");
-const screenList = document.getElementById("screen-list");
-const screenPrep = document.getElementById("screen-prep");
-const cmdTitle   = document.getElementById("cmdTitle");
-const progressDiv= document.getElementById("progress");
-const linesDiv   = document.getElementById("lines");
-const finishBtn  = document.getElementById("finishBtn");
+const ordersDiv   = document.getElementById("orders");
+const screenList  = document.getElementById("screen-list");
+const screenPrep  = document.getElementById("screen-prep");
+const screenEnd   = document.getElementById("screen-end");
+const cmdTitle    = document.getElementById("cmdTitle");
+const progressDiv = document.getElementById("progress");
+const linesDiv    = document.getElementById("lines");
+const finishBtn   = document.getElementById("finishBtn");
 
 /* ========= STATE ========= */
 
@@ -142,18 +144,28 @@ let done  = {};
 
 function loadOrders(){
   ordersDiv.innerHTML="";
-  FAKE_ORDERS.forEach(o=>{
+  ORDERS.forEach(o=>{
     const d=document.createElement("div");
     d.className="list-item";
     d.innerHTML=`
       <strong>${o.id}</strong><br>
       ${o.client}<br>
-      <button class="primary" onclick="startPrep('${o.id}')">
-        Préparer
-      </button>
+      <span class="badge ${o.status==='DONE'?'done':'todo'}">
+        ${o.status==='DONE'?'Traitée':'À préparer'}
+      </span><br>
+      ${
+        o.status==='TODO'
+        ? `<button class="primary" onclick="startPrep('${o.id}')">Préparer</button>`
+        : `<span class="doneMark">✔ Déjà traitée</span>`
+      }
     `;
     ordersDiv.appendChild(d);
   });
+
+  if(ORDERS.every(o=>o.status==="DONE")){
+    screenList.classList.add("hidden");
+    screenEnd.classList.remove("hidden");
+  }
 }
 
 function startPrep(id){
@@ -162,10 +174,9 @@ function startPrep(id){
   screenPrep.classList.remove("hidden");
 
   cmdTitle.textContent=`Commande ${id}`;
-
   lines={}; done={};
 
-  FAKE_LINES[id].forEach(l=>{
+  LINES[id].forEach(l=>{
     lines[l.code]={name:l.name,qty:l.qty};
     done[l.code]=0;
   });
@@ -186,7 +197,7 @@ function render(){
     d.innerHTML=`
       <strong>${lines[c].name}</strong><br>
       ${done[c]} / ${lines[c].qty}
-      ${done[c]===lines[c].qty?" <span class='done'>✔</span>":""}
+      ${done[c]===lines[c].qty?" <span class='doneMark'>✔</span>":""}
       <br>
       <button class="fake-scan" onclick="fakeScan('${c}')">
         Simuler scan ${c}
@@ -196,10 +207,8 @@ function render(){
   }
 
   progressDiv.textContent=`Avancement : ${doneTotal} / ${total}`;
-
-  const complete = doneTotal===total;
-  finishBtn.disabled = !complete;
-  finishBtn.className = complete ? "success" : "disabled";
+  finishBtn.disabled = doneTotal!==total;
+  finishBtn.className = doneTotal===total ? "success" : "disabled";
 }
 
 function fakeScan(code){
@@ -210,7 +219,8 @@ function fakeScan(code){
 }
 
 finishBtn.onclick=()=>{
-  alert(`Commande ${currentCmd} traitée ✅`);
+  const o = ORDERS.find(o=>o.id===currentCmd);
+  o.status="DONE";
   goBack();
 };
 
@@ -218,6 +228,7 @@ function goBack(){
   currentCmd=null;
   screenPrep.classList.add("hidden");
   screenList.classList.remove("hidden");
+  loadOrders();
 }
 
 /* ========= INIT ========= */
