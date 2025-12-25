@@ -62,7 +62,6 @@ button{
 .progress{text-align:center;font-weight:700;margin-bottom:12px}
 .doneMark{color:var(--success);font-weight:900}
 
-/* HEADER PREPA */
 .prep-header{
   display:flex;
   align-items:center;
@@ -72,36 +71,44 @@ button{
 .back{
   font-size:22px;
   cursor:pointer;
-  user-select:none;
 }
-.back:hover{opacity:.6}
-
 .fake-scan{background:#e5e7eb;font-size:13px}
+
+/* BAC */
+#bin-section{
+  margin-top:16px;
+  padding-top:12px;
+  border-top:1px dashed var(--border);
+}
+#binCode{
+  width:100%;
+  padding:10px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  font-weight:700;
+  margin-top:6px;
+}
 </style>
 </head>
 
 <body>
 <div class="app">
 
-<!-- HEADER GLOBAL -->
 <div class="header">
   <div class="logo">SAMEMO</div>
   <div class="subtitle">Préparation de commandes</div>
 </div>
 
-<!-- FIN -->
 <div id="screen-end" class="card hidden">
   <h2>🎉 Toutes les commandes ont été traitées</h2>
   <button class="success" onclick="location.reload()">🔁 Nouvelle session</button>
 </div>
 
-<!-- LISTE -->
 <div id="screen-list" class="card">
   <h2>📋 Commandes</h2>
   <div id="orders"></div>
 </div>
 
-<!-- PREPA -->
 <div id="screen-prep" class="card hidden">
 
   <div class="prep-header">
@@ -112,20 +119,26 @@ button{
   <div id="progress" class="progress"></div>
   <div id="lines"></div>
 
+  <!-- BAC -->
+  <div id="bin-section" class="hidden">
+    <strong>🧺 Bac de la commande</strong>
+    <input id="binCode" readonly placeholder="Scanner le bac">
+    <button class="fake-scan" onclick="fakeScanBin()">Simuler scan BAC-001</button>
+  </div>
+
   <button id="finishBtn" class="disabled" disabled>
     ✅ Commande traitée
   </button>
 
 </div>
-
 </div>
 
 <script>
 /* ===== DATA ===== */
 
 const ORDERS = [
-  { id:"CMD-001", client:"Client Alpha", status:"TODO" },
-  { id:"CMD-002", client:"Client Beta", status:"TODO" }
+  { id:"CMD-001", client:"Client Alpha", status:"TODO", bin:null },
+  { id:"CMD-002", client:"Client Beta", status:"TODO", bin:null }
 ];
 
 const LINES = {
@@ -148,12 +161,15 @@ const cmdTitle    = document.getElementById("cmdTitle");
 const progressDiv = document.getElementById("progress");
 const linesDiv    = document.getElementById("lines");
 const finishBtn   = document.getElementById("finishBtn");
+const binSection  = document.getElementById("bin-section");
+const binCode     = document.getElementById("binCode");
 
 /* ===== STATE ===== */
 
 let currentCmd = null;
 let lines = {};
 let done  = {};
+let scannedBin = null;
 
 /* ===== LOGIC ===== */
 
@@ -171,7 +187,7 @@ function loadOrders(){
       ${
         o.status==='TODO'
         ? `<button class="primary" onclick="startPrep('${o.id}')">Préparer</button>`
-        : `<span class="doneMark">✔ Déjà traitée</span>`
+        : `<span class="doneMark">✔ Bac ${o.bin}</span>`
       }
     `;
     ordersDiv.appendChild(d);
@@ -185,6 +201,10 @@ function loadOrders(){
 
 function startPrep(id){
   currentCmd=id;
+  scannedBin=null;
+  binCode.value="";
+  binSection.classList.add("hidden");
+
   screenList.classList.add("hidden");
   screenPrep.classList.remove("hidden");
 
@@ -222,8 +242,12 @@ function render(){
   }
 
   progressDiv.textContent=`Avancement : ${doneTotal} / ${total}`;
-  finishBtn.disabled = doneTotal!==total;
-  finishBtn.className = doneTotal===total ? "success" : "disabled";
+
+  if(doneTotal===total){
+    binSection.classList.remove("hidden");
+  }
+
+  checkReady(doneTotal===total);
 }
 
 function fakeScan(code){
@@ -233,8 +257,22 @@ function fakeScan(code){
   }
 }
 
+function fakeScanBin(){
+  scannedBin="BAC-001";
+  binCode.value=scannedBin;
+  checkReady(true);
+}
+
+function checkReady(productsOk){
+  const ready = productsOk && scannedBin;
+  finishBtn.disabled=!ready;
+  finishBtn.className=ready?"success":"disabled";
+}
+
 finishBtn.onclick=()=>{
-  ORDERS.find(o=>o.id===currentCmd).status="DONE";
+  const o=ORDERS.find(o=>o.id===currentCmd);
+  o.status="DONE";
+  o.bin=scannedBin;
   goBack();
 };
 
