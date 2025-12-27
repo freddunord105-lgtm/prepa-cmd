@@ -32,11 +32,16 @@ button{width:100%;padding:14px;border:none;border-radius:12px;font-weight:800;cu
 .msg{margin-top:10px;padding:10px 12px;border-radius:12px;font-weight:900}
 .msg.info{background:#f1f5f9;color:#0f172a}
 .msg.err{background:#fff1f2;color:#9f1239}
-.row{display:flex;gap:8px;align-items:center}
-input{width:100%;padding:12px;border:1px solid var(--border);border-radius:12px;font-weight:700}
 .hr{height:1px;background:var(--border);margin:12px 0}
 .kv{display:flex;justify-content:space-between;gap:10px;font-weight:800}
 .kv span{color:var(--muted);font-weight:700}
+
+#qr-reader{
+  width:100%;
+  border-radius:16px;
+  overflow:hidden;
+  border:1px solid var(--border);
+}
 </style>
 </head>
 <body>
@@ -65,35 +70,30 @@ input{width:100%;padding:12px;border:1px solid var(--border);border-radius:12px;
 
   <div id="progress" class="progress"></div>
 
-  <div class="small">Scan produit : colle/scan le QR produit (ex: P001) puis valide.</div>
-  <div class="row" style="margin-top:8px">
-    <input id="prodQrInput" placeholder="QR produit (ex: P001)" />
-    <button class="primary" style="width:140px;margin-top:0" onclick="scanProductQr()">Scanner</button>
-  </div>
-
+  <div class="small">Scanne les produits (ici on simule). Chaque scan produit = <b>-1 zone tampon</b>.</div>
   <div class="hr"></div>
-  <div id="lines"></div>
 
+  <div id="lines"></div>
   <div id="prepMsg"></div>
 
-  <!-- Quand prêt => on passe à l'écran FIN (scan bac) -->
   <button id="toFinishBtn" class="disabled" disabled>Commande prête → Scanner bac</button>
 </div>
 
-<!-- FIN (scan bac uniquement) -->
+<!-- FIN : SCAN BAC CAMERA -->
 <div id="screen-finish" class="card hidden">
-  <h2>📦 Scanner le bac (à la fin)</h2>
+  <h2>📦 Scanner le bac (caméra)</h2>
+  <div class="small">Place le QR du bac dans le cadre. (ex: BAC-001)</div>
 
-  <div id="finishInfo" class="msg info">Commande prête. Scanne le QR bac pour la poser dedans.</div>
+  <div class="hr"></div>
 
-  <div class="small">Scan bac : colle/scan le QR bac (ex: BAC-001).</div>
-  <div class="row" style="margin-top:8px">
-    <input id="binQrInput" placeholder="QR bac (ex: BAC-001)" />
-    <button class="success" style="width:140px;margin-top:0" onclick="finalizeWithBin()">Valider</button>
-  </div>
+  <div id="qr-reader"></div>
+
+  <button id="startCamBtn" class="primary">▶ Démarrer caméra</button>
+  <button id="stopCamBtn" class="disabled" disabled>⏹ Stop caméra</button>
 
   <div id="finishMsg"></div>
-  <button class="primary" onclick="goBack()" style="margin-top:12px">⬅ Retour liste</button>
+
+  <button class="primary" onclick="backToListFromFinish()" style="margin-top:12px">⬅ Retour liste</button>
 </div>
 
 <!-- END -->
@@ -103,6 +103,9 @@ input{width:100%;padding:12px;border:1px solid var(--border);border-radius:12px;
 </div>
 
 </div>
+
+<!-- html5-qrcode (caméra QR) -->
+<script src="https://unpkg.com/html5-qrcode@2.3.10/html5-qrcode.min.js"></script>
 
 <script>
 /* ========= DATA TEST ========= */
@@ -140,16 +143,20 @@ const cmdTitle = document.getElementById("cmdTitle");
 const progressEl = document.getElementById("progress");
 const linesDiv = document.getElementById("lines");
 const prepMsg = document.getElementById("prepMsg");
-const prodQrInput = document.getElementById("prodQrInput");
 const toFinishBtn = document.getElementById("toFinishBtn");
 
-const binQrInput = document.getElementById("binQrInput");
-const finishMsg = document.getElementById("finishMsg");
+const startCamBtn = document.getElementById("startCamBtn");
+const stopCamBtn  = document.getElementById("stopCamBtn");
+const finishMsg   = document.getElementById("finishMsg");
 
 /* ========= STATE ========= */
 let currentCmd = null;
 let lines = {}; // code -> {name, qty}
 let done  = {}; // code -> picked qty
+
+// QR Scanner instance
+let qrScanner = null;
+let cameraRunning = false;
 
 /* ========= HELPERS ========= */
 function msg(el, type, text){
@@ -205,7 +212,6 @@ function startPrep(id){
   lines = {};
   done = {};
   msg(prepMsg, "info", "");
-  prodQrInput.value = "";
 
   LINES[id].forEach(l=>{
     lines[l.code] = { name:l.name, qty:l.qty };
@@ -254,68 +260,129 @@ function renderLines(){
   }
 }
 
-function scanProductQr(){
-  const code = (prodQrInput.value || "").trim();
-  if(!code) return;
-  scanProduct(code);
-  prodQrInput.value = "";
-}
-
 function scanProduct(code){
-  // 1) produit demandé ?
   if(!lines[code]){
     msg(prepMsg, "err", "Produit NON demandé dans cette commande.");
     return;
   }
-  // 2) quantité déjà atteinte ?
   if(done[code] >= lines[code].qty){
     msg(prepMsg, "err", "Quantité déjà complète pour ce produit.");
     return;
   }
-  // 3) zone tampon dispo ?
   const dispo = ZONE_TAMPON[code] ?? 0;
   if(dispo <= 0){
     msg(prepMsg, "err", "Zone tampon vide (rupture) pour ce produit.");
     return;
   }
 
-  // ✅ mouvement : -1 zone tampon, +1 progress commande
+  // ✅ scan produit = -1 zone tampon
   ZONE_TAMPON[code] = dispo - 1;
   done[code]++;
 
-  msg(prepMsg, "info", `OK : ${code} scanné → zone tampon -1.`);
+  msg(prepMsg, "info", `OK : ${code} → zone tampon -1.`);
   renderLines();
   recapTampon();
 }
 
 toFinishBtn.onclick = () => {
-  // marque READY (prête) et va à écran scan bac
   const o = getOrder(currentCmd);
   o.status = "READY";
   openFinish(currentCmd);
 };
 
+/* ========= FIN : SCAN BAC CAMERA ========= */
 function openFinish(cmdId){
   currentCmd = cmdId;
-  binQrInput.value = "";
-  msg(finishMsg, "info", "");
+  msg(finishMsg, "info", "Démarre la caméra puis scanne le QR du bac.");
   showOnly(screenFinish);
+
+  // init scanner si besoin
+  if(!qrScanner){
+    qrScanner = new Html5Qrcode("qr-reader");
+  }
+
+  // buttons state
+  startCamBtn.disabled = false;
+  startCamBtn.className = "primary";
+  stopCamBtn.disabled = true;
+  stopCamBtn.className = "disabled";
 }
 
-/* ========= FIN : scan bac ========= */
-function finalizeWithBin(){
-  const bin = (binQrInput.value || "").trim();
-  if(!bin){
-    msg(finishMsg, "err", "Scanne un QR bac.");
-    return;
+async function startBinScanner(){
+  if(cameraRunning) return;
+
+  // iOS: mieux d’utiliser la caméra arrière
+  const config = {
+    fps: 10,
+    qrbox: { width: 250, height: 250 },
+    aspectRatio: 1.0
+  };
+
+  try{
+    cameraRunning = true;
+    startCamBtn.disabled = true;
+    startCamBtn.className = "disabled";
+    stopCamBtn.disabled = false;
+    stopCamBtn.className = "danger";
+
+    await qrScanner.start(
+      { facingMode: "environment" },
+      config,
+      (decodedText) => onBinDecoded(decodedText),
+      () => {} // ignore scan errors frame-by-frame
+    );
+
+    msg(finishMsg, "info", "Caméra active. Scanne le QR bac…");
+  }catch(e){
+    cameraRunning = false;
+    startCamBtn.disabled = false;
+    startCamBtn.className = "primary";
+    stopCamBtn.disabled = true;
+    stopCamBtn.className = "disabled";
+
+    const err = (e && e.message) ? e.message : String(e);
+    msg(finishMsg, "err",
+      "Caméra refusée ou indisponible. Vérifie Safari > Réglages > Caméra, et que tu es en HTTPS. Détail: " + err
+    );
   }
+}
+
+async function stopBinScanner(){
+  if(!qrScanner || !cameraRunning) return;
+  try{
+    await qrScanner.stop();
+    await qrScanner.clear();
+  }catch(_){}
+  cameraRunning = false;
+
+  startCamBtn.disabled = false;
+  startCamBtn.className = "primary";
+  stopCamBtn.disabled = true;
+  stopCamBtn.className = "disabled";
+  msg(finishMsg, "info", "Caméra arrêtée.");
+}
+
+function normalize(text){
+  return (text || "").trim();
+}
+
+async function onBinDecoded(decodedText){
+  const bin = normalize(decodedText);
+
+  // petit filtre : tu peux imposer un format "BAC-"
+  // si tu veux strict :
+  // if(!bin.startsWith("BAC-")) return;
 
   const o = getOrder(currentCmd);
-  if(o.status !== "READY"){
-    msg(finishMsg, "err", "Commande pas prête. Termine la prépa d’abord.");
+  if(!o || o.status !== "READY"){
+    msg(finishMsg, "err", "Commande pas prête (status incorrect).");
     return;
   }
 
+  // stop caméra dès qu’on a un bac pour éviter double lecture
+  await stopBinScanner();
+
+  // ✅ finalize
   o.status = "DONE";
   o.bin = bin;
 
@@ -323,8 +390,18 @@ function finalizeWithBin(){
   loadOrders();
 }
 
+startCamBtn.onclick = startBinScanner;
+stopCamBtn.onclick = stopBinScanner;
+
+function backToListFromFinish(){
+  stopBinScanner();
+  showOnly(screenList);
+  loadOrders();
+}
+
 /* ========= NAV ========= */
 function goBack(){
+  stopBinScanner();
   currentCmd = null;
   showOnly(screenList);
   loadOrders();
