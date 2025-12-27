@@ -42,6 +42,13 @@ button{width:100%;padding:14px;border:none;border-radius:12px;font-weight:800;cu
   overflow:hidden;
   border:1px solid var(--border);
 }
+input, select{
+  width:100%;
+  padding:12px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  font-weight:800;
+}
 </style>
 </head>
 <body>
@@ -59,6 +66,7 @@ button{width:100%;padding:14px;border:none;border-radius:12px;font-weight:800;cu
   <div id="orders"></div>
   <div class="hr"></div>
   <div id="tamponRecap" class="small"></div>
+  <div id="listMsg"></div>
 </div>
 
 <!-- PREPA -->
@@ -69,8 +77,7 @@ button{width:100%;padding:14px;border:none;border-radius:12px;font-weight:800;cu
   </div>
 
   <div id="progress" class="progress"></div>
-
-  <div class="small">Scanne les produits (ici on simule). Chaque scan produit = <b>-1 zone tampon</b>.</div>
+  <div class="small">Scanne les produits (caméra). Chaque scan valide 1 unité.</div>
   <div class="hr"></div>
 
   <div id="lines"></div>
@@ -108,29 +115,17 @@ button{width:100%;padding:14px;border:none;border-radius:12px;font-weight:800;cu
 <script src="https://unpkg.com/html5-qrcode@2.3.10/html5-qrcode.min.js"></script>
 
 <script>
-/* ========= DATA TEST ========= */
-// Commandes
-const ORDERS = [
-  { id:"CMD-001", client:"Client Alpha", status:"TODO", bin:null },
-  { id:"CMD-002", client:"Client Beta",  status:"TODO", bin:null }
-];
+/* ================== CONFIG FRONT ================== */
+/**
+ * ⚠️ Mets ici l’URL de TA Web App Apps Script (déployée).
+ * Exemple: https://script.google.com/macros/s/AKfycb.../exec
+ */
+const API_BASE = "PASTE_YOUR_APPS_SCRIPT_WEBAPP_URL_HERE";
 
-// Lignes de commande
-const LINES = {
-  "CMD-001":[
-    { code:"P001", name:"Mandarine", qty:2 },
-    { code:"P002", name:"Banane", qty:1 }
-  ],
-  "CMD-002":[
-    { code:"P001", name:"Mandarine", qty:1 },
-    { code:"P003", name:"Pomme", qty:2 }
-  ]
-};
+// actor: identifiant opérateur (tu peux le récupérer via params, login, etc.)
+let ACTOR = localStorage.getItem("SAMEMO_ACTOR") || "OP-1";
 
-// ✅ Zone tampon = dispo pour prépa (scan produit => -1)
-const ZONE_TAMPON = { "P001": 3, "P002": 1, "P003": 1 };
-
-/* ========= DOM ========= */
+/* ================== DOM ================== */
 const screenList = document.getElementById("screen-list");
 const screenPrep = document.getElementById("screen-prep");
 const screenFinish = document.getElementById("screen-finish");
@@ -138,6 +133,7 @@ const screenEnd  = document.getElementById("screen-end");
 
 const ordersDiv = document.getElementById("orders");
 const tamponRecap = document.getElementById("tamponRecap");
+const listMsg = document.getElementById("listMsg");
 
 const cmdTitle = document.getElementById("cmdTitle");
 const progressEl = document.getElementById("progress");
@@ -149,174 +145,261 @@ const startCamBtn = document.getElementById("startCamBtn");
 const stopCamBtn  = document.getElementById("stopCamBtn");
 const finishMsg   = document.getElementById("finishMsg");
 
-/* ========= STATE ========= */
+/* ================== STATE ================== */
 let currentCmd = null;
-let lines = {}; // code -> {name, qty}
-let done  = {}; // code -> picked qty
 
-// QR Scanner instance
+// commande courante (depuis API)
+let orderLines = []; // [{code,name,qty,picked}]
+let productsByCode = {}; // cache produit -> {code,name,photo}
+
+// Scanner instance
 let qrScanner = null;
 let cameraRunning = false;
 
-/* ========= HELPERS ========= */
+// Mode scan: "product" (picking) ou "bin" (fin)
+let scanMode = null;
+// Contexte du scan produit
+let scanProductCode = null;
+
+/* ================== HELPERS ================== */
 function msg(el, type, text){
   if(!text){ el.innerHTML=""; return; }
   el.innerHTML = `<div class="msg ${type}">${text}</div>`;
 }
-function getOrder(id){ return ORDERS.find(o=>o.id===id); }
 function showOnly(which){
   [screenList, screenPrep, screenFinish, screenEnd].forEach(s=>s.classList.add("hidden"));
   which.classList.remove("hidden");
 }
-function recapTampon(){
-  const parts = Object.keys(ZONE_TAMPON).sort().map(k=>`${k}:${ZONE_TAMPON[k]}`);
-  tamponRecap.textContent = parts.length ? `Zone tampon dispo → ${parts.join(" • ")}` : "";
-}
-function allDone(){ return ORDERS.every(o=>o.status==="DONE"); }
+function normalize(text){ return (text || "").trim(); }
 
-/* ========= LISTE ========= */
-function loadOrders(){
+function isSecureContextOk(){
+  if (location.protocol === "https:") return true;
+  if (location.hostname === "localhost" || location.hostname === "127.0.0.1") return true;
+  return false;
+}
+
+async function apiGet(params){
+  const url = new URL(API_BASE);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+  const r = await fetch(url.toString(), { method:"GET" });
+  if(!r.ok) throw new Error("GET failed");
+  return await r.json();
+}
+
+async function apiPost(body){
+  const r = await fetch(API_BASE, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(body)
+  });
+  const j = await r.json();
+  if(!j || j.success === false) throw new Error(j?.error || "POST failed");
+  return j;
+}
+
+/* ================== LISTE (API) ================== */
+async function loadOrders(){
   ordersDiv.innerHTML="";
-  recapTampon();
+  msg(listMsg, "info", "Chargement…");
 
-  ORDERS.forEach(o=>{
-    const d = document.createElement("div");
-    d.className = "list-item";
+  try{
+    const orders = await apiGet({ action:"orders" });
 
-    const badge =
-      o.status==="DONE" ? `<span class="badge done">Traitée</span>` :
-      o.status==="READY" ? `<span class="badge ready">Prête</span>` :
-      `<span class="badge todo">À préparer</span>`;
+    // recap tampon (optionnel) : on calcule via mouvements si tu veux un endpoint dédié plus tard.
+    // Ici on enlève le fake: on n'affiche plus ZONE_TAMPON.
+    tamponRecap.textContent = "";
 
-    const action =
-      o.status==="TODO" ? `<button class="primary" onclick="startPrep('${o.id}')">Ouvrir</button>` :
-      o.status==="READY" ? `<button class="success" onclick="openFinish('${o.id}')">Scanner bac</button>` :
-      `<div class="small" style="margin-top:6px">✔ Bac: <strong>${o.bin}</strong></div>`;
+    orders.forEach(o=>{
+      const d = document.createElement("div");
+      d.className = "list-item";
 
-    d.innerHTML = `
-      <strong>${o.id}</strong><br>
-      ${o.client}<br>
-      ${badge}<br>
-      ${action}
-    `;
-    ordersDiv.appendChild(d);
-  });
+      const badge =
+        o.status==="DONE" ? `<span class="badge done">Traitée</span>` :
+        o.status==="READY" ? `<span class="badge ready">Prête</span>` :
+        `<span class="badge todo">À préparer</span>`;
 
-  if(allDone()) showOnly(screenEnd);
-  else showOnly(screenList);
+      const action =
+        (o.status==="TODO" || o.status==="READY")
+          ? `<button class="primary" onclick="startPrep('${o.id}')">Ouvrir</button>`
+          : `<div class="small" style="margin-top:6px">✔ Bac: <strong>${o.bin || "-"}</strong></div>`;
+
+      d.innerHTML = `
+        <strong>${o.id}</strong><br>
+        ${o.client}<br>
+        ${badge}<br>
+        ${action}
+      `;
+      ordersDiv.appendChild(d);
+    });
+
+    msg(listMsg, "info", "");
+    if(Array.isArray(orders) && orders.length && orders.every(o=>o.status==="DONE")){
+      showOnly(screenEnd);
+    }else{
+      showOnly(screenList);
+    }
+  }catch(e){
+    msg(listMsg, "err", "Erreur API (orders). Vérifie API_BASE et le déploiement Apps Script.");
+    showOnly(screenList);
+  }
 }
 
-/* ========= PREPA ========= */
-function startPrep(id){
+/* ================== PRÉPA (API) ================== */
+async function startPrep(id){
   currentCmd = id;
-  lines = {};
-  done = {};
-  msg(prepMsg, "info", "");
-
-  LINES[id].forEach(l=>{
-    lines[l.code] = { name:l.name, qty:l.qty };
-    done[l.code] = 0;
-  });
-
-  cmdTitle.textContent = `Commande ${id}`;
+  msg(prepMsg, "info", "Chargement commande…");
   toFinishBtn.disabled = true;
   toFinishBtn.className = "disabled";
 
-  renderLines();
-  showOnly(screenPrep);
+  try{
+    orderLines = await apiGet({ action:"orderLines", id });
+    cmdTitle.textContent = `Commande ${id}`;
+
+    // Normalise picked si pas présent (si ton backend ne renvoie pas picked, ça sera 0)
+    orderLines = (orderLines || []).map(l => ({
+      code: l.code,
+      name: l.name,
+      qty: Number(l.qty) || 0,
+      picked: Number(l.picked) || 0
+    }));
+
+    renderLines();
+    showOnly(screenPrep);
+  }catch(e){
+    msg(prepMsg, "err", "Erreur API (orderLines).");
+    showOnly(screenList);
+  }
 }
 
 function renderLines(){
   linesDiv.innerHTML = "";
   let total=0, ok=0;
 
-  Object.keys(lines).forEach(code=>{
-    total += lines[code].qty;
-    ok += done[code];
+  orderLines.forEach(l=>{
+    total += l.qty;
+    ok += l.picked;
 
-    const dispo = ZONE_TAMPON[code] ?? 0;
+    const done = (l.picked >= l.qty);
 
     const d = document.createElement("div");
     d.className = "list-item";
     d.innerHTML = `
       <div class="kv">
-        <div><strong>${lines[code].name}</strong> <span>(${code})</span></div>
-        <div><span>Tampon</span> ${dispo}</div>
+        <div><strong>${l.name}</strong> <span>(${l.code})</span></div>
+        <div>${done ? "✔" : ""}</div>
       </div>
-      <div style="margin-top:6px;font-weight:800">${done[code]} / ${lines[code].qty} ${done[code]===lines[code].qty?"✔":""}</div>
-      <button class="primary" onclick="scanProduct('${code}')">Simuler scan ${code}</button>
+      <div style="margin-top:6px;font-weight:800">${l.picked} / ${l.qty}</div>
+      <button class="primary" onclick="startProductScan('${l.code}')">${done ? "Déjà OK" : "Scanner"} ${l.code}</button>
     `;
     linesDiv.appendChild(d);
   });
 
   progressEl.textContent = `Avancement : ${ok} / ${total}`;
 
-  if(ok === total){
+  if(ok === total && total > 0){
     toFinishBtn.disabled = false;
     toFinishBtn.className = "success";
-    msg(prepMsg, "info", "Commande prête ✅ (maintenant seulement : scanner le bac).");
-  } else {
-    msg(prepMsg, "info", "Scanne les produits demandés. Chaque scan enlève 1 en zone tampon.");
+    msg(prepMsg, "info", "Commande prête ✅ (scanner le bac à la fin).");
+  }else{
+    msg(prepMsg, "info", "Scanne les produits demandés.");
   }
 }
 
-function scanProduct(code){
-  if(!lines[code]){
-    msg(prepMsg, "err", "Produit NON demandé dans cette commande.");
-    return;
-  }
-  if(done[code] >= lines[code].qty){
-    msg(prepMsg, "err", "Quantité déjà complète pour ce produit.");
-    return;
-  }
-  const dispo = ZONE_TAMPON[code] ?? 0;
-  if(dispo <= 0){
-    msg(prepMsg, "err", "Zone tampon vide (rupture) pour ce produit.");
-    return;
-  }
-
-  // ✅ scan produit = -1 zone tampon
-  ZONE_TAMPON[code] = dispo - 1;
-  done[code]++;
-
-  msg(prepMsg, "info", `OK : ${code} → zone tampon -1.`);
-  renderLines();
-  recapTampon();
+/* ===== Scan produit: ouvre caméra, lit un QR/Code produit et appelle pickScan côté back ===== */
+function startProductScan(code){
+  scanMode = "product";
+  scanProductCode = code;
+  openScannerUI(`Scanne le produit ${code} (1 scan = 1 unité).`);
 }
 
-toFinishBtn.onclick = () => {
-  const o = getOrder(currentCmd);
-  o.status = "READY";
-  openFinish(currentCmd);
-};
+async function onProductDecoded(decodedText){
+  const scanned = normalize(decodedText);
 
-/* ========= FIN : SCAN BAC CAMERA ========= */
+  // Strict: on accepte uniquement si le code scanné = code attendu
+  if(scanned !== scanProductCode){
+    msg(prepMsg, "err", `Mauvais produit. Attendu: ${scanProductCode}, reçu: ${scanned}`);
+    return;
+  }
+
+  try{
+    // Appel back: décrémente tampon + incrémente picked
+    await apiPost({
+      action: "pickScan",
+      orderId: currentCmd,
+      actor: ACTOR,
+      code: scanProductCode,
+      qty: 1
+    });
+
+    // Stop caméra (évite double lecture)
+    await stopScanner();
+
+    // Recharge les lignes pour refléter picked réel côté serveur
+    orderLines = await apiGet({ action:"orderLines", id: currentCmd });
+    orderLines = (orderLines || []).map(l => ({
+      code: l.code, name: l.name,
+      qty: Number(l.qty)||0,
+      picked: Number(l.picked)||0
+    }));
+
+    msg(prepMsg, "info", `OK: ${scanProductCode} validé.`);
+    renderLines();
+  }catch(e){
+    msg(prepMsg, "err", e.message || "Erreur pickScan");
+    // on ne stop pas forcément, l'opérateur peut rescanner
+  }
+}
+
+/* ================== FIN (scan bac) ================== */
+toFinishBtn.onclick = () => openFinish(currentCmd);
+
 function openFinish(cmdId){
   currentCmd = cmdId;
+  scanMode = "bin";
+  scanProductCode = null;
+
   msg(finishMsg, "info", "Démarre la caméra puis scanne le QR du bac.");
   showOnly(screenFinish);
 
-  // init scanner si besoin
+  if(!isSecureContextOk()){
+    msg(finishMsg, "err", "HTTPS requis (ou localhost) pour utiliser la caméra.");
+  }
+
   if(!qrScanner){
     qrScanner = new Html5Qrcode("qr-reader");
   }
 
-  // buttons state
   startCamBtn.disabled = false;
   startCamBtn.className = "primary";
   stopCamBtn.disabled = true;
   stopCamBtn.className = "disabled";
 }
 
-async function startBinScanner(){
+function openScannerUI(infoText){
+  // on reste sur l'écran PREP, on utilise la même zone qr-reader en screen-finish? non:
+  // pour rester simple: on réutilise l'écran finish comme “scanner” générique.
+  // => On bascule sur screen-finish mais le message change.
+  msg(finishMsg, "info", infoText);
+  showOnly(screenFinish);
+
+  if(!isSecureContextOk()){
+    msg(finishMsg, "err", "HTTPS requis (ou localhost) pour utiliser la caméra.");
+    return;
+  }
+  if(!qrScanner){
+    qrScanner = new Html5Qrcode("qr-reader");
+  }
+
+  startCamBtn.disabled = false;
+  startCamBtn.className = "primary";
+  stopCamBtn.disabled = true;
+  stopCamBtn.className = "disabled";
+}
+
+async function startScanner(){
   if(cameraRunning) return;
 
-  // iOS: mieux d’utiliser la caméra arrière
-  const config = {
-    fps: 10,
-    qrbox: { width: 250, height: 250 },
-    aspectRatio: 1.0
-  };
+  const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
 
   try{
     cameraRunning = true;
@@ -328,11 +411,10 @@ async function startBinScanner(){
     await qrScanner.start(
       { facingMode: "environment" },
       config,
-      (decodedText) => onBinDecoded(decodedText),
-      () => {} // ignore scan errors frame-by-frame
+      (decodedText) => onDecoded(decodedText),
+      () => {}
     );
 
-    msg(finishMsg, "info", "Caméra active. Scanne le QR bac…");
   }catch(e){
     cameraRunning = false;
     startCamBtn.disabled = false;
@@ -342,66 +424,60 @@ async function startBinScanner(){
 
     const err = (e && e.message) ? e.message : String(e);
     msg(finishMsg, "err",
-      "Caméra refusée ou indisponible. Vérifie Safari > Réglages > Caméra, et que tu es en HTTPS. Détail: " + err
+      "Caméra refusée ou indisponible. Vérifie permission caméra + HTTPS. Détail: " + err
     );
   }
 }
 
-async function stopBinScanner(){
+async function stopScanner(){
   if(!qrScanner || !cameraRunning) return;
-  try{
-    await qrScanner.stop();
-    await qrScanner.clear();
-  }catch(_){}
+  try{ await qrScanner.stop(); }catch(_){}
+  try{ await qrScanner.clear(); }catch(_){}
   cameraRunning = false;
 
   startCamBtn.disabled = false;
   startCamBtn.className = "primary";
   stopCamBtn.disabled = true;
   stopCamBtn.className = "disabled";
-  msg(finishMsg, "info", "Caméra arrêtée.");
 }
 
-function normalize(text){
-  return (text || "").trim();
+async function onDecoded(decodedText){
+  if(scanMode === "product") return onProductDecoded(decodedText);
+  if(scanMode === "bin") return onBinDecoded(decodedText);
 }
 
 async function onBinDecoded(decodedText){
   const bin = normalize(decodedText);
 
-  // petit filtre : tu peux imposer un format "BAC-"
-  // si tu veux strict :
-  // if(!bin.startsWith("BAC-")) return;
+  try{
+    await stopScanner();
 
-  const o = getOrder(currentCmd);
-  if(!o || o.status !== "READY"){
-    msg(finishMsg, "err", "Commande pas prête (status incorrect).");
-    return;
+    await apiPost({
+      action: "orderDone",
+      orderId: currentCmd,
+      actor: ACTOR,
+      bin
+    });
+
+    msg(finishMsg, "info", `✅ Commande ${currentCmd} déposée dans ${bin}.`);
+    await loadOrders();
+  }catch(e){
+    msg(finishMsg, "err", e.message || "Erreur orderDone");
   }
-
-  // stop caméra dès qu’on a un bac pour éviter double lecture
-  await stopBinScanner();
-
-  // ✅ finalize
-  o.status = "DONE";
-  o.bin = bin;
-
-  msg(finishMsg, "info", `✅ Commande ${o.id} posée dans ${bin}.`);
-  loadOrders();
 }
 
-startCamBtn.onclick = startBinScanner;
-stopCamBtn.onclick = stopBinScanner;
+startCamBtn.onclick = startScanner;
+stopCamBtn.onclick = stopScanner;
 
 function backToListFromFinish(){
-  stopBinScanner();
+  stopScanner();
   showOnly(screenList);
   loadOrders();
 }
 
-/* ========= NAV ========= */
+/* ================== NAV ================== */
 function goBack(){
-  stopBinScanner();
+  stopScanner();
   currentCmd = null;
   showOnly(screenList);
   loadOrders();
