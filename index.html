@@ -1,100 +1,59 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Préparation Commandes — SAMEMO</title>
-
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prépa Commandes — SAMEMO</title>
 <style>
-:root{
-  --primary:#0f766e;
-  --success:#16a34a;
-  --warning:#f59e0b;
-  --bg:#f8fafc;
-  --card:#ffffff;
-  --border:#e5e7eb;
-  --disabled:#94a3b8;
-}
+:root{--primary:#0f766e;--success:#16a34a;--danger:#e11d48;--bg:#f8fafc;--card:#fff;--border:#e5e7eb;--muted:#64748b;--disabled:#94a3b8;}
 *{box-sizing:border-box}
-body{
-  margin:0;
-  font-family:system-ui,sans-serif;
-  background:var(--bg);
-}
-.app{max-width:480px;margin:auto;padding:16px}
+body{margin:0;font-family:system-ui,sans-serif;background:var(--bg)}
+.app{max-width:520px;margin:auto;padding:16px}
 .header{text-align:center;margin-bottom:16px}
 .logo{font-size:28px;font-weight:900;color:var(--primary)}
 .subtitle{font-size:14px;color:#475569}
-.card{
-  background:var(--card);
-  border-radius:16px;
-  padding:16px;
-  margin-bottom:16px;
-  box-shadow:0 10px 25px rgba(0,0,0,.06);
-}
+.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 10px 25px rgba(0,0,0,.06)}
 h2{text-align:center;margin:0}
-button{
-  width:100%;
-  padding:14px;
-  border:none;
-  border-radius:12px;
-  font-weight:700;
-  cursor:pointer;
-  margin-top:8px;
-}
+button{width:100%;padding:14px;border:none;border-radius:12px;font-weight:800;cursor:pointer;margin-top:8px}
 .primary{background:var(--primary);color:#fff}
 .success{background:var(--success);color:#fff}
+.danger{background:var(--danger);color:#fff}
 .disabled{background:var(--disabled);cursor:not-allowed}
-.list-item{
-  padding:12px;
-  border-bottom:1px solid var(--border);
-}
-.badge{
-  display:inline-block;
-  padding:4px 10px;
-  border-radius:999px;
-  font-size:12px;
-  font-weight:700;
-}
+.list-item{padding:12px;border-bottom:1px solid var(--border)}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800}
 .badge.todo{background:#fff7ed;color:#9a3412}
+.badge.ready{background:#eff6ff;color:#1d4ed8}
 .badge.done{background:#ecfdf5;color:#065f46}
 .hidden{display:none}
-.progress{text-align:center;font-weight:700;margin-bottom:12px}
-.doneMark{color:var(--success);font-weight:900}
-
-.prep-header{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-bottom:12px;
-}
-.back{
-  font-size:22px;
-  cursor:pointer;
-}
-.fake-scan{background:#e5e7eb;font-size:13px}
+.small{font-size:12px;color:var(--muted)}
+.progress{text-align:center;font-weight:900;margin:10px 0}
+.prep-header{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.back{font-size:22px;cursor:pointer}
+.msg{margin-top:10px;padding:10px 12px;border-radius:12px;font-weight:900}
+.msg.info{background:#f1f5f9;color:#0f172a}
+.msg.err{background:#fff1f2;color:#9f1239}
+.row{display:flex;gap:8px;align-items:center}
+input{width:100%;padding:12px;border:1px solid var(--border);border-radius:12px;font-weight:700}
+.hr{height:1px;background:var(--border);margin:12px 0}
+.kv{display:flex;justify-content:space-between;gap:10px;font-weight:800}
+.kv span{color:var(--muted);font-weight:700}
 </style>
 </head>
-
 <body>
 <div class="app">
 
-<!-- HEADER -->
 <div class="header">
   <div class="logo">SAMEMO</div>
   <div class="subtitle">Préparation de commandes</div>
 </div>
 
-<!-- FIN -->
-<div id="screen-end" class="card hidden">
-  <h2>🎉 Toutes les commandes ont été traitées</h2>
-  <button class="success" onclick="location.reload()">🔁 Nouvelle session</button>
-</div>
-
-<!-- LISTE COMMANDES -->
+<!-- LISTE -->
 <div id="screen-list" class="card">
   <h2>📋 Commandes</h2>
+  <div class="hr"></div>
   <div id="orders"></div>
+  <div class="hr"></div>
+  <div id="tamponRecap" class="small"></div>
 </div>
 
 <!-- PREPA -->
@@ -103,223 +62,276 @@ button{
     <div class="back" onclick="goBack()">⬅</div>
     <h2 id="cmdTitle"></h2>
   </div>
+
   <div id="progress" class="progress"></div>
+
+  <div class="small">Scan produit : colle/scan le QR produit (ex: P001) puis valide.</div>
+  <div class="row" style="margin-top:8px">
+    <input id="prodQrInput" placeholder="QR produit (ex: P001)" />
+    <button class="primary" style="width:140px;margin-top:0" onclick="scanProductQr()">Scanner</button>
+  </div>
+
+  <div class="hr"></div>
   <div id="lines"></div>
-  <button id="finishPrepBtn" class="disabled" disabled>
-    Continuer
-  </button>
+
+  <div id="prepMsg"></div>
+
+  <!-- Quand prêt => on passe à l'écran FIN (scan bac) -->
+  <button id="toFinishBtn" class="disabled" disabled>Commande prête → Scanner bac</button>
 </div>
 
-<!-- CHOIX BAC -->
-<div id="screen-bin" class="card hidden">
-  <h2>🧺 Choisir un bac</h2>
-  <div id="bins"></div>
-  <button id="confirmBinBtn" class="disabled" disabled>
-    Valider le bac
-  </button>
+<!-- FIN (scan bac uniquement) -->
+<div id="screen-finish" class="card hidden">
+  <h2>📦 Scanner le bac (à la fin)</h2>
+
+  <div id="finishInfo" class="msg info">Commande prête. Scanne le QR bac pour la poser dedans.</div>
+
+  <div class="small">Scan bac : colle/scan le QR bac (ex: BAC-001).</div>
+  <div class="row" style="margin-top:8px">
+    <input id="binQrInput" placeholder="QR bac (ex: BAC-001)" />
+    <button class="success" style="width:140px;margin-top:0" onclick="finalizeWithBin()">Valider</button>
+  </div>
+
+  <div id="finishMsg"></div>
+  <button class="primary" onclick="goBack()" style="margin-top:12px">⬅ Retour liste</button>
 </div>
 
-<!-- SCAN BAC -->
-<div id="screen-scan" class="card hidden">
-  <h2>📦 Scanner le bac</h2>
-  <p id="scanMsg">Scanne le QR du bac sélectionné</p>
-  <button class="fake-scan" onclick="fakeScanBin()">Simuler scan</button>
+<!-- END -->
+<div id="screen-end" class="card hidden">
+  <h2>🎉 Toutes les commandes ont été traitées</h2>
+  <button class="success" onclick="location.reload()">🔁 Nouvelle session</button>
 </div>
 
 </div>
 
 <script>
-/* ===== DATA TEST ===== */
-
+/* ========= DATA TEST ========= */
+// Commandes
 const ORDERS = [
   { id:"CMD-001", client:"Client Alpha", status:"TODO", bin:null },
-  { id:"CMD-002", client:"Client Beta", status:"TODO", bin:null }
+  { id:"CMD-002", client:"Client Beta",  status:"TODO", bin:null }
 ];
 
+// Lignes de commande
 const LINES = {
   "CMD-001":[
-    { code:"P001", name:"Produit A", qty:2 },
-    { code:"P002", name:"Produit B", qty:1 }
+    { code:"P001", name:"Mandarine", qty:2 },
+    { code:"P002", name:"Banane", qty:1 }
   ],
   "CMD-002":[
-    { code:"P003", name:"Produit C", qty:3 }
+    { code:"P001", name:"Mandarine", qty:1 },
+    { code:"P003", name:"Pomme", qty:2 }
   ]
 };
 
-const BINS = [
-  { id:"BAC-001", status:"LIBRE" },
-  { id:"BAC-002", status:"OCCUPE" },
-  { id:"BAC-003", status:"LIBRE" }
-];
+// ✅ Zone tampon = dispo pour prépa (scan produit => -1)
+const ZONE_TAMPON = { "P001": 3, "P002": 1, "P003": 1 };
 
-/* ===== DOM ===== */
-
+/* ========= DOM ========= */
 const screenList = document.getElementById("screen-list");
 const screenPrep = document.getElementById("screen-prep");
-const screenBin  = document.getElementById("screen-bin");
-const screenScan = document.getElementById("screen-scan");
+const screenFinish = document.getElementById("screen-finish");
 const screenEnd  = document.getElementById("screen-end");
 
-const ordersDiv  = document.getElementById("orders");
-const linesDiv   = document.getElementById("lines");
-const progress   = document.getElementById("progress");
-const cmdTitle   = document.getElementById("cmdTitle");
-const binsDiv    = document.getElementById("bins");
-const scanMsg    = document.getElementById("scanMsg");
+const ordersDiv = document.getElementById("orders");
+const tamponRecap = document.getElementById("tamponRecap");
 
-const finishPrepBtn = document.getElementById("finishPrepBtn");
-const confirmBinBtn = document.getElementById("confirmBinBtn");
+const cmdTitle = document.getElementById("cmdTitle");
+const progressEl = document.getElementById("progress");
+const linesDiv = document.getElementById("lines");
+const prepMsg = document.getElementById("prepMsg");
+const prodQrInput = document.getElementById("prodQrInput");
+const toFinishBtn = document.getElementById("toFinishBtn");
 
-/* ===== STATE ===== */
+const binQrInput = document.getElementById("binQrInput");
+const finishMsg = document.getElementById("finishMsg");
 
-let currentCmd=null;
-let lines={}, done={};
-let selectedBin=null;
+/* ========= STATE ========= */
+let currentCmd = null;
+let lines = {}; // code -> {name, qty}
+let done  = {}; // code -> picked qty
 
-/* ===== LOGIC ===== */
+/* ========= HELPERS ========= */
+function msg(el, type, text){
+  if(!text){ el.innerHTML=""; return; }
+  el.innerHTML = `<div class="msg ${type}">${text}</div>`;
+}
+function getOrder(id){ return ORDERS.find(o=>o.id===id); }
+function showOnly(which){
+  [screenList, screenPrep, screenFinish, screenEnd].forEach(s=>s.classList.add("hidden"));
+  which.classList.remove("hidden");
+}
+function recapTampon(){
+  const parts = Object.keys(ZONE_TAMPON).sort().map(k=>`${k}:${ZONE_TAMPON[k]}`);
+  tamponRecap.textContent = parts.length ? `Zone tampon dispo → ${parts.join(" • ")}` : "";
+}
+function allDone(){ return ORDERS.every(o=>o.status==="DONE"); }
 
+/* ========= LISTE ========= */
 function loadOrders(){
   ordersDiv.innerHTML="";
+  recapTampon();
+
   ORDERS.forEach(o=>{
-    const d=document.createElement("div");
-    d.className="list-item";
-    d.innerHTML=`
+    const d = document.createElement("div");
+    d.className = "list-item";
+
+    const badge =
+      o.status==="DONE" ? `<span class="badge done">Traitée</span>` :
+      o.status==="READY" ? `<span class="badge ready">Prête</span>` :
+      `<span class="badge todo">À préparer</span>`;
+
+    const action =
+      o.status==="TODO" ? `<button class="primary" onclick="startPrep('${o.id}')">Ouvrir</button>` :
+      o.status==="READY" ? `<button class="success" onclick="openFinish('${o.id}')">Scanner bac</button>` :
+      `<div class="small" style="margin-top:6px">✔ Bac: <strong>${o.bin}</strong></div>`;
+
+    d.innerHTML = `
       <strong>${o.id}</strong><br>
       ${o.client}<br>
-      <span class="badge ${o.status==='DONE'?'done':'todo'}">
-        ${o.status==='DONE'?'Traitée':'À préparer'}
-      </span><br>
-      ${
-        o.status==="TODO"
-        ? `<button class="primary" onclick="startPrep('${o.id}')">Préparer</button>`
-        : `<span class="doneMark">✔ ${o.bin}</span>`
-      }
+      ${badge}<br>
+      ${action}
     `;
     ordersDiv.appendChild(d);
   });
 
-  if(ORDERS.every(o=>o.status==="DONE")){
-    screenList.classList.add("hidden");
-    screenEnd.classList.remove("hidden");
-  }
+  if(allDone()) showOnly(screenEnd);
+  else showOnly(screenList);
 }
 
+/* ========= PREPA ========= */
 function startPrep(id){
-  currentCmd=id;
-  lines={}; done={};
+  currentCmd = id;
+  lines = {};
+  done = {};
+  msg(prepMsg, "info", "");
+  prodQrInput.value = "";
 
   LINES[id].forEach(l=>{
-    lines[l.code]={name:l.name,qty:l.qty};
-    done[l.code]=0;
+    lines[l.code] = { name:l.name, qty:l.qty };
+    done[l.code] = 0;
   });
 
-  cmdTitle.textContent=`Commande ${id}`;
-  finishPrepBtn.disabled=true;
-  finishPrepBtn.className="disabled";
+  cmdTitle.textContent = `Commande ${id}`;
+  toFinishBtn.disabled = true;
+  toFinishBtn.className = "disabled";
 
-  screenList.classList.add("hidden");
-  screenPrep.classList.remove("hidden");
   renderLines();
+  showOnly(screenPrep);
 }
 
 function renderLines(){
-  linesDiv.innerHTML="";
+  linesDiv.innerHTML = "";
   let total=0, ok=0;
 
-  for(const c in lines){
-    total+=lines[c].qty;
-    ok+=done[c];
-    const d=document.createElement("div");
-    d.className="list-item";
-    d.innerHTML=`
-      <strong>${lines[c].name}</strong><br>
-      ${done[c]} / ${lines[c].qty}
-      ${done[c]===lines[c].qty?" ✔":""}<br>
-      <button class="fake-scan" onclick="fakeScan('${c}')">
-        Simuler scan
-      </button>
+  Object.keys(lines).forEach(code=>{
+    total += lines[code].qty;
+    ok += done[code];
+
+    const dispo = ZONE_TAMPON[code] ?? 0;
+
+    const d = document.createElement("div");
+    d.className = "list-item";
+    d.innerHTML = `
+      <div class="kv">
+        <div><strong>${lines[code].name}</strong> <span>(${code})</span></div>
+        <div><span>Tampon</span> ${dispo}</div>
+      </div>
+      <div style="margin-top:6px;font-weight:800">${done[code]} / ${lines[code].qty} ${done[code]===lines[code].qty?"✔":""}</div>
+      <button class="primary" onclick="scanProduct('${code}')">Simuler scan ${code}</button>
     `;
     linesDiv.appendChild(d);
-  }
-
-  progress.textContent=`Avancement : ${ok} / ${total}`;
-
-  if(ok===total){
-    finishPrepBtn.disabled=false;
-    finishPrepBtn.className="success";
-  }
-}
-
-function fakeScan(code){
-  if(done[code] < lines[code].qty){
-    done[code]++;
-    renderLines();
-  }
-}
-
-finishPrepBtn.onclick=()=>{
-  screenPrep.classList.add("hidden");
-  screenBin.classList.remove("hidden");
-  loadBins();
-};
-
-function loadBins(){
-  binsDiv.innerHTML="";
-  selectedBin=null;
-  confirmBinBtn.disabled=true;
-  confirmBinBtn.className="disabled";
-
-  BINS.filter(b=>b.status==="LIBRE").forEach(b=>{
-    const d=document.createElement("div");
-    d.className="list-item";
-    d.innerHTML=`
-      <strong>${b.id}</strong><br>
-      <button class="primary" onclick="selectBin('${b.id}')">
-        Choisir
-      </button>
-    `;
-    binsDiv.appendChild(d);
   });
+
+  progressEl.textContent = `Avancement : ${ok} / ${total}`;
+
+  if(ok === total){
+    toFinishBtn.disabled = false;
+    toFinishBtn.className = "success";
+    msg(prepMsg, "info", "Commande prête ✅ (maintenant seulement : scanner le bac).");
+  } else {
+    msg(prepMsg, "info", "Scanne les produits demandés. Chaque scan enlève 1 en zone tampon.");
+  }
 }
 
-function selectBin(id){
-  selectedBin=id;
-  confirmBinBtn.disabled=false;
-  confirmBinBtn.className="success";
+function scanProductQr(){
+  const code = (prodQrInput.value || "").trim();
+  if(!code) return;
+  scanProduct(code);
+  prodQrInput.value = "";
 }
 
-confirmBinBtn.onclick=()=>{
-  screenBin.classList.add("hidden");
-  screenScan.classList.remove("hidden");
-  scanMsg.textContent="Scanne le QR du bac sélectionné";
+function scanProduct(code){
+  // 1) produit demandé ?
+  if(!lines[code]){
+    msg(prepMsg, "err", "Produit NON demandé dans cette commande.");
+    return;
+  }
+  // 2) quantité déjà atteinte ?
+  if(done[code] >= lines[code].qty){
+    msg(prepMsg, "err", "Quantité déjà complète pour ce produit.");
+    return;
+  }
+  // 3) zone tampon dispo ?
+  const dispo = ZONE_TAMPON[code] ?? 0;
+  if(dispo <= 0){
+    msg(prepMsg, "err", "Zone tampon vide (rupture) pour ce produit.");
+    return;
+  }
+
+  // ✅ mouvement : -1 zone tampon, +1 progress commande
+  ZONE_TAMPON[code] = dispo - 1;
+  done[code]++;
+
+  msg(prepMsg, "info", `OK : ${code} scanné → zone tampon -1.`);
+  renderLines();
+  recapTampon();
+}
+
+toFinishBtn.onclick = () => {
+  // marque READY (prête) et va à écran scan bac
+  const o = getOrder(currentCmd);
+  o.status = "READY";
+  openFinish(currentCmd);
 };
 
-function fakeScanBin(){
-  if(!selectedBin) return;
-
-  scanMsg.textContent=`✅ Bac ${selectedBin} validé`;
-  scanMsg.style.color="green";
-
-  setTimeout(()=>{
-    const o=ORDERS.find(o=>o.id===currentCmd);
-    o.status="DONE";
-    o.bin=selectedBin;
-    BINS.find(b=>b.id===selectedBin).status="OCCUPE";
-    goBack();
-  },800);
+function openFinish(cmdId){
+  currentCmd = cmdId;
+  binQrInput.value = "";
+  msg(finishMsg, "info", "");
+  showOnly(screenFinish);
 }
 
+/* ========= FIN : scan bac ========= */
+function finalizeWithBin(){
+  const bin = (binQrInput.value || "").trim();
+  if(!bin){
+    msg(finishMsg, "err", "Scanne un QR bac.");
+    return;
+  }
+
+  const o = getOrder(currentCmd);
+  if(o.status !== "READY"){
+    msg(finishMsg, "err", "Commande pas prête. Termine la prépa d’abord.");
+    return;
+  }
+
+  o.status = "DONE";
+  o.bin = bin;
+
+  msg(finishMsg, "info", `✅ Commande ${o.id} posée dans ${bin}.`);
+  loadOrders();
+}
+
+/* ========= NAV ========= */
 function goBack(){
-  screenPrep.classList.add("hidden");
-  screenBin.classList.add("hidden");
-  screenScan.classList.add("hidden");
-  screenList.classList.remove("hidden");
+  currentCmd = null;
+  showOnly(screenList);
   loadOrders();
 }
 
 /* INIT */
 loadOrders();
 </script>
-
 </body>
 </html>
